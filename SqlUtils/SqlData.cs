@@ -1,24 +1,29 @@
 ﻿namespace SqlUtils
 {
+    /// <summary>
+    /// class to specify the database value and its type
+    /// </summary>
     public class SqlData
     {
        public SqlData(string data, SqlTypes type)
         {
-            this.data = data;
-            this.type = type;
+            Data = data;
+            Type = type;
         }
-        public string data { get; set; }
+        public string Data { get; set; }
 
-        public SqlTypes type { get; set; }
+        public SqlTypes Type { get; set; }
     }
-
+    /// <summary>
+    /// valid database types
+    /// </summary>
     public enum SqlTypes
     {
-        NUMBER,
-        STRING_AR,
-        STRING_EN,
-        DATE,
-        TIME,
-        DATE_TIME
+        Number,
+        StringAr,
+        StringEn,
+        Date,
+        Time,
+        DateTime
     }
 }
