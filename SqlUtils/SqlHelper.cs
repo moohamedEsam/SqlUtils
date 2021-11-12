@@ -3,9 +3,7 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Data.SqlClient;
 using System.Globalization;
-using System.Linq;
 using MySql.Data.MySqlClient;
-using static System.String;
 
 namespace SqlUtils
 {
@@ -161,14 +159,20 @@ namespace SqlUtils
             SqlData id,
             Dictionary<string, SqlData> data)
         {
+            var query = GetUpdateQueryWithoutCondition(tableName, data);
+            query += GetEqualCondition(idColumnName, id);
+            Console.WriteLine($"update query: {query}");
+            return query;
+        }
+
+        private string GetUpdateQueryWithoutCondition(string tableName, Dictionary<string, SqlData> data)
+        {
             var query = $"update {tableName} set ";
             foreach (var item in data)
                 query += $"{item.Key} = {PrepareDataForSql(item.Value)}, ";
 
 
             query = query.Substring(0, query.Length - 2);
-            query += GetEqualCondition(idColumnName, id);
-            Console.WriteLine($"update query: {query}");
             return query;
         }
 
@@ -208,6 +212,12 @@ namespace SqlUtils
             return GetCommand(updateQuery).ExecuteNonQuery() != 0;
         }
 
+        public bool UpdateWithCondition(string tableName, Dictionary<string, SqlData> data, string condition)
+        {
+            var query = GetUpdateQueryWithoutCondition(tableName, data) + "where " +condition;
+            return GetCommand(query).ExecuteNonQuery() != 0;
+        }
+
         /// <summary>
         /// for specific queries
         /// </summary>
@@ -222,10 +232,11 @@ namespace SqlUtils
         /// select all data from the table
         /// </summary>
         /// <param name="tableName"></param>
+        /// <param name="projections">columns which will be selected</param>
         /// <returns>null if theirs an exception or the database reader</returns>
-        public DbDataReader GetData(string tableName)
+        public DbDataReader GetData(string tableName, string projections = "*")
         {
-            var query = $"select * from {tableName}";
+            var query = $"select {projections} from {tableName}";
 
             return GetCommand(query).ExecuteReader();
         }
@@ -239,7 +250,12 @@ namespace SqlUtils
         {
             return GetCommand(query).ExecuteReader();
         }
-
+        
+        public DbDataReader SelectWithCondition(string tableName,  string condition, string projections="*")
+        {
+            var query = $"select {projections} from {tableName} where {condition}";
+            return GetCommand(query).ExecuteReader();
+        }
         /// <summary>
         /// insert a row in a table
         /// </summary>
