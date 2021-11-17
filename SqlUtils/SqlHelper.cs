@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Data.SqlClient;
 using System.Globalization;
+using System.Linq;
+using System.Reflection;
 using MySql.Data.MySqlClient;
 
 namespace SqlUtils
@@ -141,6 +143,46 @@ namespace SqlUtils
             }
         }
 
+        private static bool ContainsArabicLetters(string word) => word.Any(
+            letter => letter <= 'ى' && letter >= 'ا'
+        );
+
+        private string PrepareDataForSql<T>(PropertyInfo property, T className)
+        {
+            var value = property.GetValue(className);
+            switch (value)
+            {
+                case string stringValue:
+                    return ContainsArabicLetters(stringValue) ? $"N'{stringValue}'" : $"'{stringValue}'";
+
+                case DateTime date:
+                    return _databaseType == DatabaseTypes.Sqlserver
+                        ? $"cast({date.Year}/{date.Month}/{date.Day} as date)"
+                        : $"str_to_date('{date.Year}/{date.Month}/{date.Day}', '%Y/%m/%d')";
+                //number
+                default:
+                    return $"{value}";
+            }
+        }
+
+        private static string GetEqualCondition(string idColumnName, object id)
+        {
+            var query = " where ";
+            switch (id)
+            {
+                case string word:
+                    query += $"{idColumnName} like '%{word}%'";
+                    break;
+
+                //number
+                default:
+                    query += $"{idColumnName} = {id}";
+                    break;
+            }
+
+            return query;
+        }
+
         private string GetEqualCondition(string idColumnName, SqlData id)
         {
             var query = " where ";
@@ -150,6 +192,18 @@ namespace SqlUtils
             else
                 query += $"{idColumnName} = {PrepareDataForSql(id)}";
             Console.WriteLine($"equal condition: {query}");
+            return query;
+        }
+
+        private string GetUpdateQuery<T>(
+            T className,
+            string idColumnName,
+            object id,
+            string tableName)
+        {
+            var query = GetUpdateQueryWithoutCondition(tableName, className);
+            query += GetEqualCondition(idColumnName, id);
+            Console.WriteLine($"update query: {query}");
             return query;
         }
 
@@ -165,6 +219,20 @@ namespace SqlUtils
             return query;
         }
 
+        private string GetUpdateQueryWithoutCondition<T>(string tableName, T className)
+        {
+            var query = $"update {tableName} set ";
+            var properties = typeof(T).GetProperties();
+            foreach (var propertyInfo in properties)
+            {
+                var value = PrepareDataForSql(propertyInfo, className);
+                query += $"{propertyInfo.Name} = {value}, ";
+            }
+
+            query = query.Substring(0, query.Length - 2);
+            return query;
+        }
+
         private string GetUpdateQueryWithoutCondition(string tableName, Dictionary<string, SqlData> data)
         {
             var query = $"update {tableName} set ";
@@ -173,6 +241,25 @@ namespace SqlUtils
 
 
             query = query.Substring(0, query.Length - 2);
+            return query;
+        }
+
+        private string GetInsertQuery<T>(string tableName, T className)
+        {
+            var query = $"insert into {tableName} ";
+            var columns = "";
+            var values = "";
+            var properties = typeof(T).GetProperties();
+            foreach (var item in properties)
+            {
+                columns += $"{item.Name}, ";
+                values += $"{PrepareDataForSql(item, className)}, ";
+            }
+
+            columns = columns.Substring(0, columns.Length - 2);
+            values = values.Substring(0, values.Length - 2);
+            query += $"({columns}) values ({values})";
+            Console.WriteLine($"insert query: {query}");
             return query;
         }
 
@@ -212,9 +299,26 @@ namespace SqlUtils
             return GetCommand(updateQuery).ExecuteNonQuery() != 0;
         }
 
+        public bool Update<T>(
+            string tableName,
+            string idColumnName,
+            object id,
+            T className
+        )
+        {
+            var updateQuery = GetUpdateQuery(className, idColumnName, id, tableName);
+            return GetCommand(updateQuery).ExecuteNonQuery() != 0;
+        }
+
         public bool UpdateWithCondition(string tableName, Dictionary<string, SqlData> data, string condition)
         {
-            var query = GetUpdateQueryWithoutCondition(tableName, data) + "where " +condition;
+            var query = GetUpdateQueryWithoutCondition(tableName, data) + "where " + condition;
+            return GetCommand(query).ExecuteNonQuery() != 0;
+        }
+
+        public bool UpdateWithCondition<T>(string tableName, T className, string condition)
+        {
+            var query = GetUpdateQueryWithoutCondition(tableName, className) + "where " + condition;
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
@@ -250,12 +354,13 @@ namespace SqlUtils
         {
             return GetCommand(query).ExecuteReader();
         }
-        
-        public DbDataReader SelectWithCondition(string tableName,  string condition, string projections="*")
+
+        public DbDataReader SelectWithCondition(string tableName, string condition, string projections = "*")
         {
             var query = $"select {projections} from {tableName} where {condition}";
             return GetCommand(query).ExecuteReader();
         }
+
         /// <summary>
         /// insert a row in a table
         /// </summary>
@@ -265,6 +370,12 @@ namespace SqlUtils
         public bool Insert(string tableName, Dictionary<string, SqlData> data)
         {
             var query = GetInsertQuery(tableName, data);
+            return GetCommand(query).ExecuteNonQuery() != 0;
+        }
+
+        public bool Insert<T>(string tableName, T className)
+        {
+            var query = GetInsertQuery(tableName, className);
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
@@ -278,6 +389,14 @@ namespace SqlUtils
         public bool Delete(string tableName, string idColumnName, SqlData data)
         {
             var query = $"delete from {tableName} {GetEqualCondition(idColumnName, data)}";
+            Console.WriteLine($"delete: {query}");
+
+            return GetCommand(query).ExecuteNonQuery() != 0;
+        }
+
+        public bool Delete(string tableName, string idColumnName, object id)
+        {
+            var query = $"delete from {tableName} {GetEqualCondition(idColumnName, id)}";
             Console.WriteLine($"delete: {query}");
 
             return GetCommand(query).ExecuteNonQuery() != 0;
