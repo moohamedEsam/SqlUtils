@@ -42,29 +42,29 @@ namespace SqlUtils
         /// <summary>
         /// connect to database must be called first before any function
         /// </summary>
-        public void Connect(string serverName, string dataBaseName, Credentials credentials)
+        public void Connect(string serverName, string dataBaseName, string userName, string password)
         {
             if (_databaseType == DatabaseTypes.Mysql)
-                ConnectToMySql(serverName, dataBaseName, credentials);
+                ConnectToMySql(serverName, dataBaseName, userName, password);
             else
-                ConnectToSqlServer(serverName, dataBaseName, credentials);
+                ConnectToSqlServer(serverName, dataBaseName, userName, password);
         }
 
         private void ConnectToSqlServer(string serverName, string dataBaseName,
-            Credentials credentials)
+            string userName, string password)
         {
             var connectionString =
-                $"Data Source={serverName};Initial Catalog={dataBaseName};User ID={credentials.UserName};Password={credentials.Password};MultipleActiveResultSets=true";
+                $"Data Source={serverName};Initial Catalog={dataBaseName};User ID={userName};Password={password};MultipleActiveResultSets=true";
             _sqlConnection = new SqlConnection(connectionString);
             _sqlConnection.Open();
             Console.WriteLine("connection open");
         }
 
         private void ConnectToMySql(string serverName, string databaseName,
-            Credentials credentials)
+            string userName, string password)
         {
             var connectionString =
-                $"Server={serverName};Database={databaseName};Uid={credentials.UserName};Pwd={credentials.Password}";
+                $"Server={serverName};Database={databaseName};Uid={userName};Pwd={password}";
             _mySqlConnection = new MySqlConnection(connectionString);
             _mySqlConnection.Open();
             Console.WriteLine("connection open");
@@ -338,11 +338,18 @@ namespace SqlUtils
         /// <param name="tableName"></param>
         /// <param name="projections">columns which will be selected</param>
         /// <returns>null if theirs an exception or the database reader</returns>
-        public DbDataReader GetData(string tableName, string projections = "*")
+        public DbDataAdapter GetDataAdapter(string tableName, string projections = "*")
         {
             var query = $"select {projections} from {tableName}";
 
-            return GetCommand(query).ExecuteReader();
+            return GetDbDataAdapter(query);
+        }
+
+        private DbDataAdapter GetDbDataAdapter(string query)
+        {
+            if (_databaseType == DatabaseTypes.Mysql)
+                return new MySqlDataAdapter(GetCommand(query) as MySqlCommand);
+            return new SqlDataAdapter(GetCommand(query) as SqlCommand);
         }
 
         /// <summary>
@@ -350,15 +357,15 @@ namespace SqlUtils
         /// </summary>
         /// <param name="query">the whole select query</param>
         /// <returns></returns>
-        public DbDataReader SelectByQuery(string query)
+        public DbDataAdapter SelectByQuery(string query)
         {
-            return GetCommand(query).ExecuteReader();
+            return GetDbDataAdapter(query);
         }
 
-        public DbDataReader SelectWithCondition(string tableName, string condition, string projections = "*")
+        public DbDataAdapter SelectWithCondition(string tableName, string condition, string projections = "*")
         {
             var query = $"select {projections} from {tableName} where {condition}";
-            return GetCommand(query).ExecuteReader();
+            return GetDbDataAdapter(query);
         }
 
         /// <summary>
@@ -402,6 +409,12 @@ namespace SqlUtils
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
+        public bool DeleteWithCondition(string tableName, string condition)
+        {
+            var query = $"delete from {tableName} where {condition}";
+            Console.WriteLine($"delete query: {query}");
+            return GetCommand(query).ExecuteNonQuery() != 0;
+        }
         ~SqlHelper()
         {
             Disconnect();
