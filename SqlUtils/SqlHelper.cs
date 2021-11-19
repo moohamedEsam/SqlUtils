@@ -344,6 +344,13 @@ namespace SqlUtils
 
             return GetDbDataAdapter(query);
         }
+        
+        public DbDataReader GetDataReader(string tableName, string projections = "*")
+        {
+            var query = $"select {projections} from {tableName}";
+
+            return GetCommand(query).ExecuteReader();
+        }
 
         private DbDataAdapter GetDbDataAdapter(string query)
         {
@@ -357,15 +364,26 @@ namespace SqlUtils
         /// </summary>
         /// <param name="query">the whole select query</param>
         /// <returns></returns>
-        public DbDataAdapter SelectByQuery(string query)
+        public DbDataAdapter SelectByQuery_Adapter(string query)
         {
             return GetDbDataAdapter(query);
         }
+        
+        public DbDataReader SelectByQuery_Reader(string query)
+        {
+            return GetCommand(query).ExecuteReader();
+        }
 
-        public DbDataAdapter SelectWithCondition(string tableName, string condition, string projections = "*")
+        public DbDataAdapter SelectWithCondition_Adapter(string tableName, string condition, string projections = "*")
         {
             var query = $"select {projections} from {tableName} where {condition}";
             return GetDbDataAdapter(query);
+        }
+        
+        public DbDataReader SelectWithCondition_Reader(string tableName, string condition, string projections = "*")
+        {
+            var query = $"select {projections} from {tableName} where {condition}";
+            return GetCommand(query).ExecuteReader();
         }
 
         /// <summary>
