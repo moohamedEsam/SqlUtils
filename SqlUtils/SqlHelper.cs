@@ -10,6 +10,10 @@ using MySql.Data.MySqlClient;
 
 namespace SqlUtils
 {
+    /// <summary>
+    /// the class used in the function
+    /// the variable must match the columns with in the given table
+    /// </summary>
     public class SqlHelper
     {
         private SqlConnection _sqlConnection;
@@ -43,11 +47,10 @@ namespace SqlUtils
 
         private void InitializeTransaction()
         {
-            if (_transaction != null) return;
             if (_databaseType == DatabaseTypes.Sqlserver)
                 _transaction = _sqlConnection.BeginTransaction("");
             else
-                _transaction = _mySqlConnection.BeginTransaction(IsolationLevel.Chaos);
+                _transaction = _mySqlConnection.BeginTransaction(IsolationLevel.ReadCommitted);
         }
 
         /// <summary>
@@ -619,12 +622,20 @@ namespace SqlUtils
         /// <summary>
         /// commit the changes done with transactions
         /// </summary>
-        public void Commit() => _transaction.Commit();
+        public void Commit()
+        {
+            _transaction.Commit();
+            InitializeTransaction();
+        }
 
         /// <summary>
         /// revert the changes done by the transactions
         /// </summary>
-        public void RollBack() => _transaction.Rollback();
+        public void RollBack()
+        {
+            _transaction.Rollback();
+            InitializeTransaction();
+        }
 
         ~SqlHelper()
         {
