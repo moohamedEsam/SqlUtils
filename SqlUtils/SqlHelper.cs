@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.Common;
 using System.Data.SqlClient;
 using System.Globalization;
@@ -14,7 +15,7 @@ namespace SqlUtils
         private SqlConnection _sqlConnection;
         private MySqlConnection _mySqlConnection;
         private readonly DatabaseTypes _databaseType;
-
+        private DbTransaction _transaction;
 
         private DbConnection GetConnection()
         {
@@ -32,6 +33,7 @@ namespace SqlUtils
         }
 
         /// <param name="databaseTypes">
+        /// type of the used database
         /// valid values are sqlServer and mysql
         /// </param>
         public SqlHelper(DatabaseTypes databaseTypes)
@@ -39,8 +41,17 @@ namespace SqlUtils
             _databaseType = databaseTypes;
         }
 
+        private void InitializeTransaction()
+        {
+            if (_transaction != null) return;
+            if (_databaseType == DatabaseTypes.Sqlserver)
+                _transaction = _sqlConnection.BeginTransaction("");
+            else
+                _transaction = _mySqlConnection.BeginTransaction(IsolationLevel.Chaos);
+        }
+
         /// <summary>
-        /// connect to database must be called first before any function
+        /// connect to the database
         /// </summary>
         public void Connect(string serverName, string dataBaseName, string userName, string password)
         {
@@ -48,7 +59,9 @@ namespace SqlUtils
                 ConnectToMySql(serverName, dataBaseName, userName, password);
             else
                 ConnectToSqlServer(serverName, dataBaseName, userName, password);
+            InitializeTransaction();
         }
+
 
         private void ConnectToSqlServer(string serverName, string dataBaseName,
             string userName, string password)
@@ -79,7 +92,9 @@ namespace SqlUtils
             Console.WriteLine("connection closed");
         }
 
-
+        /// <summary>
+        /// legacy function
+        /// </summary>
         private string PrepareDataForSql(SqlData data)
         {
             switch (data.Type)
@@ -147,6 +162,13 @@ namespace SqlUtils
             letter => letter <= 'ى' && letter >= 'ا'
         );
 
+        /// <summary>
+        /// function to return values in valid way to save in sql
+        /// </summary>
+        /// <param name="property">variable member of the class</param>
+        /// <param name="className">the class which contains the variable</param>
+        /// <typeparam name="T">the type of the class</typeparam>
+        /// <returns>the string which will be saved in the database</returns>
         private string PrepareDataForSql<T>(PropertyInfo property, T className)
         {
             var value = property.GetValue(className);
@@ -165,6 +187,12 @@ namespace SqlUtils
             }
         }
 
+        /// <summary>
+        /// function which return the equal condition weather its string or number
+        /// </summary>
+        /// <param name="idColumnName">the primary key column name</param>
+        /// <param name="id">string or number</param>
+        /// <returns>the equal condition</returns>
         private static string GetEqualCondition(string idColumnName, object id)
         {
             var query = " where ";
@@ -183,6 +211,9 @@ namespace SqlUtils
             return query;
         }
 
+        /// <summary>
+        /// legacy function
+        /// </summary>
         private string GetEqualCondition(string idColumnName, SqlData id)
         {
             var query = " where ";
@@ -299,6 +330,15 @@ namespace SqlUtils
             return GetCommand(updateQuery).ExecuteNonQuery() != 0;
         }
 
+        /// <summary>
+        /// update table values using their id
+        /// </summary>
+        /// <param name="tableName"></param>
+        /// <param name="idColumnName">the name of the primary key column</param>
+        /// <param name="id">value of the id and its type in a class</param>
+        /// <param name="className">the class which contains the id</param>
+        /// <typeparam name="T">the class type</typeparam>
+        /// <returns>true if the update affected at least one row otherwise false</returns>
         public bool Update<T>(
             string tableName,
             string idColumnName,
@@ -310,16 +350,67 @@ namespace SqlUtils
             return GetCommand(updateQuery).ExecuteNonQuery() != 0;
         }
 
+        /// <summary>
+        /// update table values using their id within the transaction
+        /// </summary>
+        /// <param name="tableName"></param>
+        /// <param name="idColumnName">the name of the primary key column</param>
+        /// <param name="id">value of the id and its type in a class</param>
+        /// <param name="className">the class which contains the id</param>
+        /// <typeparam name="T">the class type</typeparam>
+        /// <returns>true if the update affected at least one row otherwise false</returns>
+        public bool UpdateWithTransaction<T>(
+            string tableName,
+            string idColumnName,
+            object id,
+            T className
+        )
+        {
+            var updateQuery = GetUpdateQuery(className, idColumnName, id, tableName);
+            var command = GetCommand(updateQuery);
+            command.Transaction = _transaction;
+            return command.ExecuteNonQuery() != 0;
+        }
+
         public bool UpdateWithCondition(string tableName, Dictionary<string, SqlData> data, string condition)
         {
             var query = GetUpdateQueryWithoutCondition(tableName, data) + "where " + condition;
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
+        /// <summary>
+        /// update the database with custom condition
+        /// </summary>
+        /// <param name="tableName">the table which will be updated</param>
+        /// <param name="className">the class to update the values</param>
+        /// <param name="condition">the condition which will be used in the query</param>
+        /// <typeparam name="T">the class type</typeparam>
+        /// <returns>the number of the affected rows</returns>
+        /// <example>
+        /// to update only some of the values use anonymous class
+        /// a table has properties id, name, date
+        /// to update only the name pass className param as {name=the new value}
+        /// </example>
         public bool UpdateWithCondition<T>(string tableName, T className, string condition)
         {
             var query = GetUpdateQueryWithoutCondition(tableName, className) + "where " + condition;
             return GetCommand(query).ExecuteNonQuery() != 0;
+        }
+
+        /// <summary>
+        /// update the database with custom condition within the transaction
+        /// </summary>
+        /// <param name="tableName">the table which will be updated</param>
+        /// <param name="className">the class to update the values</param>
+        /// <param name="condition">the condition which will be used in the query</param>
+        /// <typeparam name="T">the class type</typeparam>
+        /// <returns>the number of the affected rows</returns>
+        public bool UpdateWithConditionTransaction<T>(string tableName, T className, string condition)
+        {
+            var query = GetUpdateQueryWithoutCondition(tableName, className) + "where " + condition;
+            var command = GetCommand(query);
+            command.Transaction = _transaction;
+            return command.ExecuteNonQuery() != 0;
         }
 
         /// <summary>
@@ -344,7 +435,18 @@ namespace SqlUtils
 
             return GetDbDataAdapter(query);
         }
-        
+
+        /// <summary>
+        /// function to get the data in a data reader
+        /// </summary>
+        /// <param name="tableName">the table which will be returned</param>
+        /// <param name="projections">
+        ///the column which will be returned if not passed will return all the columns
+        /// if passed will return only the given columns
+        /// </param>
+        /// <example>to return all the columns use GetDataReader(tableName)</example>
+        /// <example> to return only the id and name of the table use GetDataReader(tableName, "id, name")</example>
+        /// <returns>the data reader</returns>
         public DbDataReader GetDataReader(string tableName, string projections = "*")
         {
             var query = $"select {projections} from {tableName}";
@@ -360,26 +462,47 @@ namespace SqlUtils
         }
 
         /// <summary>
-        /// selecting with specification
+        /// function to get data with the given query
         /// </summary>
         /// <param name="query">the whole select query</param>
-        /// <returns></returns>
+        /// <returns>data adapter</returns>
         public DbDataAdapter SelectByQuery_Adapter(string query)
         {
             return GetDbDataAdapter(query);
         }
-        
+
+        /// <summary>
+        /// function to get data with the given query
+        /// </summary>
+        /// <param name="query">the whole select query</param>
+        /// <returns>data reader</returns>
         public DbDataReader SelectByQuery_Reader(string query)
         {
             return GetCommand(query).ExecuteReader();
         }
 
+        /// <summary>
+        /// function to get data with custom condition
+        /// </summary>
+        /// <param name="tableName">the table of the database</param>
+        /// <param name="condition">the condition to return only the valid rows</param>
+        /// <param name="projections">the column to return if passed return only the given columns
+        /// if not passed return all the columns</param>
+        /// <returns>data adapter</returns>
         public DbDataAdapter SelectWithCondition_Adapter(string tableName, string condition, string projections = "*")
         {
             var query = $"select {projections} from {tableName} where {condition}";
             return GetDbDataAdapter(query);
         }
-        
+
+        /// <summary>
+        /// function to get data with custom condition
+        /// </summary>
+        /// <param name="tableName">the table of the database</param>
+        /// <param name="condition">the condition to return only the valid rows</param>
+        /// <param name="projections">the column to return if passed return only the given columns
+        /// if not passed return all the columns</param>
+        /// <returns>data reader</returns>
         public DbDataReader SelectWithCondition_Reader(string tableName, string condition, string projections = "*")
         {
             var query = $"select {projections} from {tableName} where {condition}";
@@ -398,10 +521,32 @@ namespace SqlUtils
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
+        /// <summary>
+        /// insert a row in a table
+        /// </summary>
+        /// <param name="tableName"></param>
+        /// <param name="className">the class which contains the data</param>
+        /// <typeparam name="T">the class type</typeparam>
+        /// <returns>true if the update affected at least one row otherwise false</returns>
         public bool Insert<T>(string tableName, T className)
         {
             var query = GetInsertQuery(tableName, className);
             return GetCommand(query).ExecuteNonQuery() != 0;
+        }
+
+        /// <summary>
+        /// insert a row in a table within a transaction
+        /// </summary>
+        /// <param name="tableName"></param>
+        /// <param name="className">the class which contains the data</param>
+        /// <typeparam name="T">the class type</typeparam>
+        /// <returns>true if the update affected at least one row otherwise false</returns>
+        public bool InsertWithTransaction<T>(string tableName, T className)
+        {
+            var query = GetInsertQuery(tableName, className);
+            var command = GetCommand(query);
+            command.Transaction = _transaction;
+            return command.ExecuteNonQuery() != 0;
         }
 
         /// <summary>
@@ -427,12 +572,60 @@ namespace SqlUtils
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
+        /// <summary>
+        /// delete within a transaction
+        /// </summary>
+        /// <param name="tableName">the table which data will be deleted from</param>
+        /// <param name="idColumnName">the primary key column</param>
+        /// <param name="id">the value of the primary key</param>
+        /// <returns></returns>
+        public bool DeleteWithTransaction(string tableName, string idColumnName, object id)
+        {
+            InitializeTransaction();
+            var query = $"delete from {tableName} {GetEqualCondition(idColumnName, id)}";
+            Console.WriteLine($"delete: {query}");
+            var command = GetCommand(query);
+            command.Transaction = _transaction;
+            return command.ExecuteNonQuery() != 0;
+        }
+        /// <summary>
+        /// delete with custom condition
+        /// </summary>
+        /// <param name="tableName"></param>
+        /// <param name="condition">the condition to delete the rows which make this condition true</param>
+        /// <returns>true if the any row is affected else false</returns>
         public bool DeleteWithCondition(string tableName, string condition)
         {
             var query = $"delete from {tableName} where {condition}";
             Console.WriteLine($"delete query: {query}");
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
+
+        /// <summary>
+        /// delete with custom condition within a transaction
+        /// </summary>
+        /// <param name="tableName"></param>
+        /// <param name="condition">the condition to delete the rows which make this condition true</param>
+        /// <returns>true if the any row is affected else false</returns>
+        public bool DeleteWithCondition_Transaction(string tableName, string condition)
+        {
+            var query = $"delete from {tableName} where {condition}";
+            Console.WriteLine($"delete query: {query}");
+            var command = GetCommand(query);
+            command.Transaction = _transaction;
+            return command.ExecuteNonQuery() != 0;
+        }
+
+        /// <summary>
+        /// commit the changes done with transactions
+        /// </summary>
+        public void Commit() => _transaction.Commit();
+
+        /// <summary>
+        /// revert the changes done by the transactions
+        /// </summary>
+        public void RollBack() => _transaction.Rollback();
+
         ~SqlHelper()
         {
             Disconnect();
