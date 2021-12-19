@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Data.OleDb;
 using System.Data.SqlClient;
 using System.Globalization;
 using System.Linq;
@@ -16,24 +17,29 @@ namespace SqlUtils
     /// </summary>
     public class SqlHelper
     {
-        private SqlConnection _sqlConnection;
-        private MySqlConnection _mySqlConnection;
+        private DbConnection _connection;
         private readonly DatabaseTypes _databaseType;
         private DbTransaction _transaction;
 
-        private DbConnection GetConnection()
-        {
-            if (_databaseType == DatabaseTypes.Mysql)
-                return _mySqlConnection;
-            return _sqlConnection;
-        }
+        private DbConnection GetConnection() => _connection;
 
+        private SqlConnection GetSqlConnection() => _connection as SqlConnection;
+        private MySqlConnection GetMySqlConnection() => _connection as MySqlConnection;
+        private OleDbConnection GetOleDbConnection() => _connection as OleDbConnection;
 
         private DbCommand GetCommand(string query)
         {
-            if (_databaseType == DatabaseTypes.Mysql)
-                return new MySqlCommand(query, _mySqlConnection);
-            return new SqlCommand(query, _sqlConnection);
+            switch (_databaseType)
+            {
+                case DatabaseTypes.Mysql:
+                    return new MySqlCommand(query, GetMySqlConnection());
+                case DatabaseTypes.Sqlserver:
+                    return new SqlCommand(query, GetSqlConnection());
+                case DatabaseTypes.OleDb:
+                    return new OleDbCommand(query, GetOleDbConnection());
+                default:
+                    return new SqlCommand(query, GetSqlConnection());
+            }
         }
 
         /// <param name="databaseTypes">
@@ -47,10 +53,21 @@ namespace SqlUtils
 
         private void InitializeTransaction()
         {
-            if (_databaseType == DatabaseTypes.Sqlserver)
-                _transaction = _sqlConnection.BeginTransaction("");
-            else
-                _transaction = _mySqlConnection.BeginTransaction(IsolationLevel.ReadCommitted);
+            switch (_databaseType)
+            {
+                case DatabaseTypes.Sqlserver:
+                    _transaction = GetSqlConnection().BeginTransaction("");
+                    break;
+                case DatabaseTypes.OleDb:
+                    _transaction = GetOleDbConnection().BeginTransaction(IsolationLevel.ReadCommitted);
+                    break;
+                case DatabaseTypes.Mysql:
+                    _transaction = GetMySqlConnection().BeginTransaction(IsolationLevel.ReadCommitted);
+                    break;
+                default:
+                    _transaction = GetSqlConnection().BeginTransaction("");
+                    break;
+            }
         }
 
         /// <summary>
@@ -58,10 +75,22 @@ namespace SqlUtils
         /// </summary>
         public void Connect(string serverName, string dataBaseName, string userName, string password)
         {
-            if (_databaseType == DatabaseTypes.Mysql)
-                ConnectToMySql(serverName, dataBaseName, userName, password);
-            else
-                ConnectToSqlServer(serverName, dataBaseName, userName, password);
+            switch (_databaseType)
+            {
+                case DatabaseTypes.Mysql:
+                    ConnectToMySql(serverName, dataBaseName, userName, password);
+                    break;
+                case DatabaseTypes.Sqlserver:
+                    ConnectToSqlServer(serverName, dataBaseName, userName, password);
+                    break;
+                case DatabaseTypes.OleDb:
+                    ConnectToOleDb(serverName, dataBaseName);
+                    break;
+                default:
+                    ConnectToSqlServer(serverName, dataBaseName, userName, password);
+                    break;
+            }
+
             InitializeTransaction();
         }
 
@@ -71,8 +100,8 @@ namespace SqlUtils
         {
             var connectionString =
                 $"Data Source={serverName};Initial Catalog={dataBaseName};User ID={userName};Password={password};MultipleActiveResultSets=true";
-            _sqlConnection = new SqlConnection(connectionString);
-            _sqlConnection.Open();
+            _connection = new SqlConnection(connectionString);
+            _connection.Open();
             Console.WriteLine("connection open");
         }
 
@@ -81,8 +110,17 @@ namespace SqlUtils
         {
             var connectionString =
                 $"Server={serverName};Database={databaseName};Uid={userName};Pwd={password}";
-            _mySqlConnection = new MySqlConnection(connectionString);
-            _mySqlConnection.Open();
+            _connection = new MySqlConnection(connectionString);
+            _connection.Open();
+            Console.WriteLine("connection open");
+        }
+
+        private void ConnectToOleDb(string serverName, string databaseName)
+        {
+            var connectionString = $"Provider={serverName};Data Source={databaseName};Persist Security Info=True";
+
+            _connection = new OleDbConnection(connectionString);
+            _connection.Open();
             Console.WriteLine("connection open");
         }
 
@@ -98,6 +136,7 @@ namespace SqlUtils
         /// <summary>
         /// legacy function
         /// </summary>
+        [Obsolete("legacy function")]
         private string PrepareDataForSql(SqlData data)
         {
             switch (data.Type)
@@ -115,10 +154,10 @@ namespace SqlUtils
                             ? $"cast({data.Data} as datetime)"
                             : $"str_to_date('{data.Data}', '%Y/%m/%d')";
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         Console.WriteLine("correct format should be yyyy/mm/dd");
-                        throw ex;
+                        throw;
                     }
 
                 case SqlTypes.Time:
@@ -130,11 +169,11 @@ namespace SqlUtils
                             ? $"convert(time, '{data.Data}')"
                             : $"str_to_date('{data.Data}', '%H:%i')";
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         Console.WriteLine("invalid date format");
                         Console.WriteLine("correct format should be HH:mm");
-                        throw ex;
+                        throw;
                     }
                 }
                 case SqlTypes.DateTime:
@@ -145,11 +184,11 @@ namespace SqlUtils
                             ? $"cast({data.Data} as datetime)"
                             : $"str_to_date('{data.Data}', '%Y/%m/%d %H:%i')";
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         Console.WriteLine("invalid date format");
                         Console.WriteLine("correct format should be yyyy/MM/dd HH:mm");
-                        throw ex;
+                        throw;
                     }
 
 
@@ -217,6 +256,7 @@ namespace SqlUtils
         /// <summary>
         /// legacy function
         /// </summary>
+        [Obsolete("legacy function")]
         private string GetEqualCondition(string idColumnName, SqlData id)
         {
             var query = " where ";
@@ -241,6 +281,7 @@ namespace SqlUtils
             return query;
         }
 
+        [Obsolete("legacy function")]
         private string GetUpdateQuery(
             string tableName,
             string idColumnName,
@@ -267,6 +308,7 @@ namespace SqlUtils
             return query;
         }
 
+        [Obsolete("legacy function")]
         private string GetUpdateQueryWithoutCondition(string tableName, Dictionary<string, SqlData> data)
         {
             var query = $"update {tableName} set ";
@@ -297,6 +339,7 @@ namespace SqlUtils
             return query;
         }
 
+        [Obsolete("legacy function")]
         private string GetInsertQuery(string tableName, Dictionary<string, SqlData> data)
         {
             var query = $"insert into {tableName} ";
@@ -323,6 +366,7 @@ namespace SqlUtils
         /// <param name="id">value of the id and its type in a class</param>
         /// <param name="data">the columns and their corresponding values</param>
         /// <returns>true if the update affected at least one row otherwise false</returns>
+        [Obsolete("legacy function")]
         public bool Update(
             string tableName,
             string idColumnName,
@@ -375,6 +419,7 @@ namespace SqlUtils
             return command.ExecuteNonQuery() != 0;
         }
 
+        [Obsolete("legacy function")]
         public bool UpdateWithCondition(string tableName, Dictionary<string, SqlData> data, string condition)
         {
             var query = GetUpdateQueryWithoutCondition(tableName, data) + "where " + condition;
@@ -459,9 +504,17 @@ namespace SqlUtils
 
         private DbDataAdapter GetDbDataAdapter(string query)
         {
-            if (_databaseType == DatabaseTypes.Mysql)
-                return new MySqlDataAdapter(GetCommand(query) as MySqlCommand);
-            return new SqlDataAdapter(GetCommand(query) as SqlCommand);
+            switch (_databaseType)
+            {
+                case DatabaseTypes.Mysql:
+                    return new MySqlDataAdapter(GetCommand(query) as MySqlCommand);
+                case DatabaseTypes.Sqlserver:
+                    return new SqlDataAdapter(GetCommand(query) as SqlCommand);
+                case DatabaseTypes.OleDb:
+                    return new OleDbDataAdapter(GetCommand(query) as OleDbCommand);
+                default:
+                    return new SqlDataAdapter(GetCommand(query) as SqlCommand);
+            }
         }
 
         /// <summary>
@@ -518,6 +571,7 @@ namespace SqlUtils
         /// <param name="tableName"></param>
         /// <param name="data">columns and their values</param>
         /// <returns>true if the update affected at least one row otherwise false</returns>
+        [Obsolete("legacy function")]
         public bool Insert(string tableName, Dictionary<string, SqlData> data)
         {
             var query = GetInsertQuery(tableName, data);
@@ -559,6 +613,7 @@ namespace SqlUtils
         /// <param name="idColumnName">the column name of the primary key</param>
         /// <param name="data"></param>
         /// <returns>true if the update affected at least one row otherwise false</returns>
+        [Obsolete("legacy function")]
         public bool Delete(string tableName, string idColumnName, SqlData data)
         {
             var query = $"delete from {tableName} {GetEqualCondition(idColumnName, data)}";
@@ -591,6 +646,7 @@ namespace SqlUtils
             command.Transaction = _transaction;
             return command.ExecuteNonQuery() != 0;
         }
+
         /// <summary>
         /// delete with custom condition
         /// </summary>

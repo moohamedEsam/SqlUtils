@@ -6,6 +6,7 @@ namespace SqlUtils
     public enum DatabaseTypes
     {
         Sqlserver,
-        Mysql
+        Mysql,
+        OleDb
     }
 }
