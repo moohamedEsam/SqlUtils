@@ -20,25 +20,38 @@ namespace SqlUtils
         private DbConnection _connection;
         private readonly DatabaseTypes _databaseType;
         private DbTransaction _transaction;
-
         private DbConnection GetConnection() => _connection;
 
         private SqlConnection GetSqlConnection() => _connection as SqlConnection;
         private MySqlConnection GetMySqlConnection() => _connection as MySqlConnection;
         private OleDbConnection GetOleDbConnection() => _connection as OleDbConnection;
 
+        private void AssignTransactionIfExists(DbCommand command)
+        {
+            if (_transaction != null)
+                command.Transaction = _transaction;
+        }
         private DbCommand GetCommand(string query)
         {
+            DbCommand command;
             switch (_databaseType)
             {
                 case DatabaseTypes.Mysql:
-                    return new MySqlCommand(query, GetMySqlConnection());
+                    command = new MySqlCommand(query, GetMySqlConnection());
+                    AssignTransactionIfExists(command);
+                    return command;
                 case DatabaseTypes.Sqlserver:
-                    return new SqlCommand(query, GetSqlConnection());
+                    command = new SqlCommand(query, GetSqlConnection());
+                    AssignTransactionIfExists(command);
+                    return command;
                 case DatabaseTypes.OleDb:
-                    return new OleDbCommand(query, GetOleDbConnection());
+                    command = new OleDbCommand(query, GetOleDbConnection());
+                    AssignTransactionIfExists(command);
+                    return command;
                 default:
-                    return new SqlCommand(query, GetSqlConnection());
+                    command = new SqlCommand(query, GetSqlConnection());
+                    AssignTransactionIfExists(command);
+                    return command;
             }
         }
 
@@ -51,7 +64,12 @@ namespace SqlUtils
             _databaseType = databaseTypes;
         }
 
-        private void InitializeTransaction()
+        private void ClearTransaction()
+        {
+            _transaction.Dispose();
+            _transaction = null;
+        }
+        public void InitializeTransaction()
         {
             switch (_databaseType)
             {
@@ -90,8 +108,6 @@ namespace SqlUtils
                     ConnectToSqlServer(serverName, dataBaseName, userName, password);
                     break;
             }
-
-            InitializeTransaction();
         }
 
 
@@ -149,7 +165,7 @@ namespace SqlUtils
 
                     try
                     {
-                        DateTime.ParseExact(data.Data, "yyyy/mm/dd", CultureInfo.InvariantCulture);
+                        var unused = DateTime.ParseExact(data.Data, "yyyy/mm/dd", CultureInfo.InvariantCulture);
                         return _databaseType == DatabaseTypes.Sqlserver
                             ? $"cast({data.Data} as datetime)"
                             : $"str_to_date('{data.Data}', '%Y/%m/%d')";
@@ -164,7 +180,7 @@ namespace SqlUtils
                 {
                     try
                     {
-                        DateTime.ParseExact(data.Data, "HH:mm", CultureInfo.InvariantCulture);
+                        var unused = DateTime.ParseExact(data.Data, "HH:mm", CultureInfo.InvariantCulture);
                         return _databaseType == DatabaseTypes.Sqlserver
                             ? $"convert(time, '{data.Data}')"
                             : $"str_to_date('{data.Data}', '%H:%i')";
@@ -179,7 +195,7 @@ namespace SqlUtils
                 case SqlTypes.DateTime:
                     try
                     {
-                        DateTime.ParseExact(data.Data, "yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture);
+                        var unused = DateTime.ParseExact(data.Data, "yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture);
                         return _databaseType == DatabaseTypes.Sqlserver
                             ? $"cast({data.Data} as datetime)"
                             : $"str_to_date('{data.Data}', '%Y/%m/%d %H:%i')";
@@ -397,28 +413,6 @@ namespace SqlUtils
             return GetCommand(updateQuery).ExecuteNonQuery() != 0;
         }
 
-        /// <summary>
-        /// update table values using their id within the transaction
-        /// </summary>
-        /// <param name="tableName"></param>
-        /// <param name="idColumnName">the name of the primary key column</param>
-        /// <param name="id">value of the id and its type in a class</param>
-        /// <param name="className">the class which contains the id</param>
-        /// <typeparam name="T">the class type</typeparam>
-        /// <returns>true if the update affected at least one row otherwise false</returns>
-        public bool UpdateWithTransaction<T>(
-            string tableName,
-            string idColumnName,
-            object id,
-            T className
-        )
-        {
-            var updateQuery = GetUpdateQuery(className, idColumnName, id, tableName);
-            var command = GetCommand(updateQuery);
-            command.Transaction = _transaction;
-            return command.ExecuteNonQuery() != 0;
-        }
-
         [Obsolete("legacy function")]
         public bool UpdateWithCondition(string tableName, Dictionary<string, SqlData> data, string condition)
         {
@@ -445,21 +439,6 @@ namespace SqlUtils
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
-        /// <summary>
-        /// update the database with custom condition within the transaction
-        /// </summary>
-        /// <param name="tableName">the table which will be updated</param>
-        /// <param name="className">the class to update the values</param>
-        /// <param name="condition">the condition which will be used in the query</param>
-        /// <typeparam name="T">the class type</typeparam>
-        /// <returns>the number of the affected rows</returns>
-        public bool UpdateWithConditionTransaction<T>(string tableName, T className, string condition)
-        {
-            var query = GetUpdateQueryWithoutCondition(tableName, className) + "where " + condition;
-            var command = GetCommand(query);
-            command.Transaction = _transaction;
-            return command.ExecuteNonQuery() != 0;
-        }
 
         /// <summary>
         /// for specific queries
@@ -575,7 +554,8 @@ namespace SqlUtils
         public bool Insert(string tableName, Dictionary<string, SqlData> data)
         {
             var query = GetInsertQuery(tableName, data);
-            return GetCommand(query).ExecuteNonQuery() != 0;
+            var result = GetCommand(query).ExecuteNonQuery() != 0;
+            return result;
         }
 
         /// <summary>
@@ -591,20 +571,6 @@ namespace SqlUtils
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
-        /// <summary>
-        /// insert a row in a table within a transaction
-        /// </summary>
-        /// <param name="tableName"></param>
-        /// <param name="className">the class which contains the data</param>
-        /// <typeparam name="T">the class type</typeparam>
-        /// <returns>true if the update affected at least one row otherwise false</returns>
-        public bool InsertWithTransaction<T>(string tableName, T className)
-        {
-            var query = GetInsertQuery(tableName, className);
-            var command = GetCommand(query);
-            command.Transaction = _transaction;
-            return command.ExecuteNonQuery() != 0;
-        }
 
         /// <summary>
         /// delete a row using its id
@@ -630,22 +596,6 @@ namespace SqlUtils
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
-        /// <summary>
-        /// delete within a transaction
-        /// </summary>
-        /// <param name="tableName">the table which data will be deleted from</param>
-        /// <param name="idColumnName">the primary key column</param>
-        /// <param name="id">the value of the primary key</param>
-        /// <returns></returns>
-        public bool DeleteWithTransaction(string tableName, string idColumnName, object id)
-        {
-            InitializeTransaction();
-            var query = $"delete from {tableName} {GetEqualCondition(idColumnName, id)}";
-            Console.WriteLine($"delete: {query}");
-            var command = GetCommand(query);
-            command.Transaction = _transaction;
-            return command.ExecuteNonQuery() != 0;
-        }
 
         /// <summary>
         /// delete with custom condition
@@ -661,28 +611,14 @@ namespace SqlUtils
         }
 
         /// <summary>
-        /// delete with custom condition within a transaction
-        /// </summary>
-        /// <param name="tableName"></param>
-        /// <param name="condition">the condition to delete the rows which make this condition true</param>
-        /// <returns>true if the any row is affected else false</returns>
-        public bool DeleteWithCondition_Transaction(string tableName, string condition)
-        {
-            var query = $"delete from {tableName} where {condition}";
-            Console.WriteLine($"delete query: {query}");
-            var command = GetCommand(query);
-            command.Transaction = _transaction;
-            return command.ExecuteNonQuery() != 0;
-        }
-
-        /// <summary>
         /// commit the changes done with transactions
         /// </summary>
         public void Commit()
         {
             _transaction.Commit();
-            InitializeTransaction();
+            ClearTransaction();
         }
+
 
         /// <summary>
         /// revert the changes done by the transactions
@@ -690,8 +626,9 @@ namespace SqlUtils
         public void RollBack()
         {
             _transaction.Rollback();
-            InitializeTransaction();
+            ClearTransaction();
         }
+
 
         ~SqlHelper()
         {
