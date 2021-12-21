@@ -31,6 +31,7 @@ namespace SqlUtils
             if (_transaction != null)
                 command.Transaction = _transaction;
         }
+
         private DbCommand GetCommand(string query)
         {
             DbCommand command;
@@ -69,6 +70,7 @@ namespace SqlUtils
             _transaction.Dispose();
             _transaction = null;
         }
+
         public void InitializeTransaction()
         {
             switch (_databaseType)
@@ -293,7 +295,6 @@ namespace SqlUtils
         {
             var query = GetUpdateQueryWithoutCondition(tableName, className);
             query += GetEqualCondition(idColumnName, id);
-            Console.WriteLine($"update query: {query}");
             return query;
         }
 
@@ -306,7 +307,6 @@ namespace SqlUtils
         {
             var query = GetUpdateQueryWithoutCondition(tableName, data);
             query += GetEqualCondition(idColumnName, id);
-            Console.WriteLine($"update query: {query}");
             return query;
         }
 
@@ -351,7 +351,6 @@ namespace SqlUtils
             columns = columns.Substring(0, columns.Length - 2);
             values = values.Substring(0, values.Length - 2);
             query += $"({columns}) values ({values})";
-            Console.WriteLine($"insert query: {query}");
             return query;
         }
 
@@ -410,6 +409,7 @@ namespace SqlUtils
         )
         {
             var updateQuery = GetUpdateQuery(className, idColumnName, id, tableName);
+            Console.WriteLine($"SqlUtils: update -> {updateQuery}");
             return GetCommand(updateQuery).ExecuteNonQuery() != 0;
         }
 
@@ -436,6 +436,7 @@ namespace SqlUtils
         public bool UpdateWithCondition<T>(string tableName, T className, string condition)
         {
             var query = GetUpdateQueryWithoutCondition(tableName, className) + "where " + condition;
+            Console.WriteLine($"SqlUtils: update -> {query}");
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
@@ -455,29 +456,35 @@ namespace SqlUtils
         /// </summary>
         /// <param name="tableName"></param>
         /// <param name="projections">columns which will be selected</param>
+        /// <param name="orderBy">order by column add desc if you want to revert the sorting</param>
         /// <returns>null if theirs an exception or the database reader</returns>
-        public DbDataAdapter GetDataAdapter(string tableName, string projections = "*")
+        public DbDataAdapter GetDataAdapter(string tableName, string projections = "*", string orderBy = "")
         {
-            var query = $"select {projections} from {tableName}";
-
+            var query = $"select {projections} from {tableName} ";
+            if (orderBy != "")
+                query += $"order by {orderBy}";
+            Console.WriteLine($"SqlUtils: getDataAdapter -> {query}");
             return GetDbDataAdapter(query);
         }
 
-        /// <summary>
-        /// function to get the data in a data reader
-        /// </summary>
-        /// <param name="tableName">the table which will be returned</param>
-        /// <param name="projections">
-        ///the column which will be returned if not passed will return all the columns
-        /// if passed will return only the given columns
-        /// </param>
-        /// <example>to return all the columns use GetDataReader(tableName)</example>
-        /// <example> to return only the id and name of the table use GetDataReader(tableName, "id, name")</example>
-        /// <returns>the data reader</returns>
-        public DbDataReader GetDataReader(string tableName, string projections = "*")
+        ///  <summary>
+        ///  function to get the data in a data reader
+        ///  </summary>
+        ///  <param name="tableName">the table which will be returned</param>
+        ///  <param name="projections">
+        /// the column which will be returned if not passed will return all the columns
+        ///  if passed will return only the given columns
+        ///  </param>
+        ///  <param name="orderBy">order by column add desc if you want to revert the sorting</param>
+        ///  <example>to return all the columns use GetDataReader(tableName)</example>
+        ///  <example> to return only the id and name of the table use GetDataReader(tableName, "id, name")</example>
+        ///  <returns>the data reader</returns>
+        public DbDataReader GetDataReader(string tableName, string projections = "*", string orderBy = "")
         {
-            var query = $"select {projections} from {tableName}";
-
+            var query = $"select {projections} from {tableName} ";
+            if (orderBy != "")
+                query += $"orderBy {orderBy}";
+            Console.WriteLine($"SqlUtils: getData -> {query}");
             return GetCommand(query).ExecuteReader();
         }
 
@@ -523,10 +530,15 @@ namespace SqlUtils
         /// <param name="condition">the condition to return only the valid rows</param>
         /// <param name="projections">the column to return if passed return only the given columns
         /// if not passed return all the columns</param>
+        /// <param name="orderBy">order by column add desc if you want to revert the sorting</param>
         /// <returns>data adapter</returns>
-        public DbDataAdapter SelectWithCondition_Adapter(string tableName, string condition, string projections = "*")
+        public DbDataAdapter SelectWithCondition_Adapter(string tableName, string condition, string projections = "*",
+            string orderBy = "")
         {
-            var query = $"select {projections} from {tableName} where {condition}";
+            var query = $"select {projections} from {tableName} where {condition} ";
+            if (orderBy != "")
+                query += $"orderBy {orderBy}";
+            Console.WriteLine($"SqlUtils: {query}");
             return GetDbDataAdapter(query);
         }
 
@@ -555,6 +567,7 @@ namespace SqlUtils
         {
             var query = GetInsertQuery(tableName, data);
             var result = GetCommand(query).ExecuteNonQuery() != 0;
+            Console.WriteLine($"SqlUtils: Insert -> {query}");
             return result;
         }
 
@@ -568,7 +581,9 @@ namespace SqlUtils
         public bool Insert<T>(string tableName, T className)
         {
             var query = GetInsertQuery(tableName, className);
-            return GetCommand(query).ExecuteNonQuery() != 0;
+            var result = GetCommand(query).ExecuteNonQuery() != 0;
+            Console.WriteLine($"SqlUtils: Insert -> {query}");
+            return result;
         }
 
 
@@ -584,15 +599,13 @@ namespace SqlUtils
         {
             var query = $"delete from {tableName} {GetEqualCondition(idColumnName, data)}";
             Console.WriteLine($"delete: {query}");
-
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
         public bool Delete(string tableName, string idColumnName, object id)
         {
             var query = $"delete from {tableName} {GetEqualCondition(idColumnName, id)}";
-            Console.WriteLine($"delete: {query}");
-
+            Console.WriteLine($"SqlUtils: Delete -> {query}");
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
@@ -606,7 +619,7 @@ namespace SqlUtils
         public bool DeleteWithCondition(string tableName, string condition)
         {
             var query = $"delete from {tableName} where {condition}";
-            Console.WriteLine($"delete query: {query}");
+            Console.WriteLine($"SqlUtils: Delete -> {query}");
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
