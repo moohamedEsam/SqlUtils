@@ -623,6 +623,13 @@ namespace SqlUtils
             return GetCommand(query).ExecuteNonQuery() != 0;
         }
 
+        public bool DeleteAll(string tableName)
+        {
+            var query = $"delete from {tableName}";
+            Console.WriteLine($"SqlUtils: Delete -> {query}");
+            return GetCommand(query).ExecuteNonQuery() != 0;
+        }
+
 
         /// <summary>
         /// delete with custom condition
