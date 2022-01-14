@@ -7,6 +7,7 @@ namespace SqlUtils
     {
         Sqlserver,
         Mysql,
-        OleDb
+        OleDb,
+        Oracle
     }
 }

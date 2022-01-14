@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using MySql.Data.MySqlClient;
+using Oracle.ManagedDataAccess.Client;
 
 namespace SqlUtils
 {
@@ -25,6 +26,8 @@ namespace SqlUtils
         private SqlConnection GetSqlConnection() => _connection as SqlConnection;
         private MySqlConnection GetMySqlConnection() => _connection as MySqlConnection;
         private OleDbConnection GetOleDbConnection() => _connection as OleDbConnection;
+        
+        private OracleConnection GetOracleConnection() => _connection as OracleConnection;
 
         private void AssignTransactionIfExists(DbCommand command)
         {
@@ -50,7 +53,7 @@ namespace SqlUtils
                     AssignTransactionIfExists(command);
                     return command;
                 default:
-                    command = new SqlCommand(query, GetSqlConnection());
+                    command = new OracleCommand(query, GetOracleConnection());
                     AssignTransactionIfExists(command);
                     return command;
             }
@@ -85,7 +88,7 @@ namespace SqlUtils
                     _transaction = GetMySqlConnection().BeginTransaction(IsolationLevel.ReadCommitted);
                     break;
                 default:
-                    _transaction = GetSqlConnection().BeginTransaction("");
+                    _transaction = GetOracleConnection().BeginTransaction(IsolationLevel.ReadCommitted);
                     break;
             }
         }
@@ -104,10 +107,10 @@ namespace SqlUtils
                     ConnectToSqlServer(serverName, dataBaseName, userName, password);
                     break;
                 case DatabaseTypes.OleDb:
-                    ConnectToOleDb(serverName, dataBaseName);
+                    ConnectToOleDb(serverName, dataBaseName, password);
                     break;
                 default:
-                    ConnectToSqlServer(serverName, dataBaseName, userName, password);
+                    ConnectToOracle(dataBaseName, userName, password);
                     break;
             }
         }
@@ -133,11 +136,22 @@ namespace SqlUtils
             Console.WriteLine("connection open");
         }
 
-        private void ConnectToOleDb(string serverName, string databaseName)
+        private void ConnectToOleDb(string serverName, string databaseName, string password)
         {
-            var connectionString = $"Provider={serverName};Data Source={databaseName};Persist Security Info=True";
+            var connectionString =
+                $"Provider={serverName};Data Source={databaseName};Jet OLEDB:Database Password={password};";
 
             _connection = new OleDbConnection(connectionString);
+            _connection.Open();
+            Console.WriteLine("connection open");
+        }
+
+        private void ConnectToOracle(string databaseName, string username, string password)
+        {
+            var connectionString =
+                $"User Id={username};Password={password};Data Source={databaseName}";
+
+            _connection = new OracleConnection(connectionString);
             _connection.Open();
             Console.WriteLine("connection open");
         }
