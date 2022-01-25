@@ -9,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 using MySql.Data.MySqlClient;
 using Oracle.ManagedDataAccess.Client;
+using SqlUtils.Helpers;
 
 namespace SqlUtils
 {
@@ -18,46 +19,8 @@ namespace SqlUtils
     /// </summary>
     public class SqlHelper
     {
-        private DbConnection _connection;
+        private BaseHelper _helper;
         private readonly DatabaseTypes _databaseType;
-        private DbTransaction _transaction;
-        private DbConnection GetConnection() => _connection;
-
-        private SqlConnection GetSqlConnection() => _connection as SqlConnection;
-        private MySqlConnection GetMySqlConnection() => _connection as MySqlConnection;
-        private OleDbConnection GetOleDbConnection() => _connection as OleDbConnection;
-        
-        private OracleConnection GetOracleConnection() => _connection as OracleConnection;
-
-        private void AssignTransactionIfExists(DbCommand command)
-        {
-            if (_transaction != null)
-                command.Transaction = _transaction;
-        }
-
-        private DbCommand GetCommand(string query)
-        {
-            DbCommand command;
-            switch (_databaseType)
-            {
-                case DatabaseTypes.Mysql:
-                    command = new MySqlCommand(query, GetMySqlConnection());
-                    AssignTransactionIfExists(command);
-                    return command;
-                case DatabaseTypes.Sqlserver:
-                    command = new SqlCommand(query, GetSqlConnection());
-                    AssignTransactionIfExists(command);
-                    return command;
-                case DatabaseTypes.OleDb:
-                    command = new OleDbCommand(query, GetOleDbConnection());
-                    AssignTransactionIfExists(command);
-                    return command;
-                default:
-                    command = new OracleCommand(query, GetOracleConnection());
-                    AssignTransactionIfExists(command);
-                    return command;
-            }
-        }
 
         /// <param name="databaseTypes">
         /// type of the used database
@@ -66,103 +29,35 @@ namespace SqlUtils
         public SqlHelper(DatabaseTypes databaseTypes)
         {
             _databaseType = databaseTypes;
-        }
-
-        private void ClearTransaction()
-        {
-            _transaction.Dispose();
-            _transaction = null;
-        }
-
-        public void InitializeTransaction()
-        {
-            switch (_databaseType)
+            switch (databaseTypes)
             {
                 case DatabaseTypes.Sqlserver:
-                    _transaction = GetSqlConnection().BeginTransaction("");
-                    break;
-                case DatabaseTypes.OleDb:
-                    _transaction = GetOleDbConnection().BeginTransaction(IsolationLevel.ReadCommitted);
+                    _helper = new SqlServerHelper();
                     break;
                 case DatabaseTypes.Mysql:
-                    _transaction = GetMySqlConnection().BeginTransaction(IsolationLevel.ReadCommitted);
+                    _helper = new MysqlHelper();
                     break;
-                default:
-                    _transaction = GetOracleConnection().BeginTransaction(IsolationLevel.ReadCommitted);
+                case DatabaseTypes.OleDb:
+                    _helper = new OleDbHelper();
+                    break;
+                case DatabaseTypes.Oracle:
+                    _helper = new OracleHelper();
                     break;
             }
         }
 
-        /// <summary>
-        /// connect to the database
-        /// </summary>
-        public void Connect(string serverName, string dataBaseName, string userName, string password)
+        public void Connect(string serverName, string databaseName, string username, string password)
         {
-            switch (_databaseType)
-            {
-                case DatabaseTypes.Mysql:
-                    ConnectToMySql(serverName, dataBaseName, userName, password);
-                    break;
-                case DatabaseTypes.Sqlserver:
-                    ConnectToSqlServer(serverName, dataBaseName, userName, password);
-                    break;
-                case DatabaseTypes.OleDb:
-                    ConnectToOleDb(serverName, dataBaseName, password);
-                    break;
-                default:
-                    ConnectToOracle(dataBaseName, userName, password);
-                    break;
-            }
+            _helper.Connect(serverName, databaseName, username, password);
         }
 
-
-        private void ConnectToSqlServer(string serverName, string dataBaseName,
-            string userName, string password)
-        {
-            var connectionString =
-                $"Data Source={serverName};Initial Catalog={dataBaseName};User ID={userName};Password={password};MultipleActiveResultSets=true";
-            _connection = new SqlConnection(connectionString);
-            _connection.Open();
-            Console.WriteLine("connection open");
-        }
-
-        private void ConnectToMySql(string serverName, string databaseName,
-            string userName, string password)
-        {
-            var connectionString =
-                $"Server={serverName};Database={databaseName};Uid={userName};Pwd={password}";
-            _connection = new MySqlConnection(connectionString);
-            _connection.Open();
-            Console.WriteLine("connection open");
-        }
-
-        private void ConnectToOleDb(string serverName, string databaseName, string password)
-        {
-            var connectionString =
-                $"Provider={serverName};Data Source={databaseName};Jet OLEDB:Database Password={password};";
-
-            _connection = new OleDbConnection(connectionString);
-            _connection.Open();
-            Console.WriteLine("connection open");
-        }
-
-        private void ConnectToOracle(string databaseName, string username, string password)
-        {
-            var connectionString =
-                $"User Id={username};Password={password};Data Source={databaseName}";
-
-            _connection = new OracleConnection(connectionString);
-            _connection.Open();
-            Console.WriteLine("connection open");
-        }
 
         /// <summary>
         /// disconnect the database use if before the program exit
         /// </summary>
         public void Disconnect()
         {
-            GetConnection().Close();
-            Console.WriteLine("connection closed");
+            _helper.Disconnect();
         }
 
         /// <summary>
@@ -403,7 +298,7 @@ namespace SqlUtils
             Dictionary<string, SqlData> data)
         {
             var updateQuery = GetUpdateQuery(tableName, idColumnName, id, data);
-            return GetCommand(updateQuery).ExecuteNonQuery() != 0;
+            return _helper.GetCommand(updateQuery).ExecuteNonQuery() != 0;
         }
 
         /// <summary>
@@ -424,14 +319,14 @@ namespace SqlUtils
         {
             var updateQuery = GetUpdateQuery(className, idColumnName, id, tableName);
             Console.WriteLine($"SqlUtils: update -> {updateQuery}");
-            return GetCommand(updateQuery).ExecuteNonQuery() != 0;
+            return _helper.GetCommand(updateQuery).ExecuteNonQuery() != 0;
         }
 
         [Obsolete("legacy function")]
         public bool UpdateWithCondition(string tableName, Dictionary<string, SqlData> data, string condition)
         {
             var query = GetUpdateQueryWithoutCondition(tableName, data) + "where " + condition;
-            return GetCommand(query).ExecuteNonQuery() != 0;
+            return _helper.GetCommand(query).ExecuteNonQuery() != 0;
         }
 
         /// <summary>
@@ -451,7 +346,7 @@ namespace SqlUtils
         {
             var query = GetUpdateQueryWithoutCondition(tableName, className) + "where " + condition;
             Console.WriteLine($"SqlUtils: update -> {query}");
-            return GetCommand(query).ExecuteNonQuery() != 0;
+            return _helper.GetCommand(query).ExecuteNonQuery() != 0;
         }
 
 
@@ -462,7 +357,7 @@ namespace SqlUtils
         /// <returns></returns>
         public bool ExecuteQuery(string query)
         {
-            return GetCommand(query).ExecuteNonQuery() != 0;
+            return _helper.GetCommand(query).ExecuteNonQuery() != 0;
         }
 
         /// <summary>
@@ -499,23 +394,10 @@ namespace SqlUtils
             if (orderBy != "")
                 query += $"orderBy {orderBy}";
             Console.WriteLine($"SqlUtils: getData -> {query}");
-            return GetCommand(query).ExecuteReader();
+            return _helper.GetCommand(query).ExecuteReader();
         }
 
-        private DbDataAdapter GetDbDataAdapter(string query)
-        {
-            switch (_databaseType)
-            {
-                case DatabaseTypes.Mysql:
-                    return new MySqlDataAdapter(GetCommand(query) as MySqlCommand);
-                case DatabaseTypes.Sqlserver:
-                    return new SqlDataAdapter(GetCommand(query) as SqlCommand);
-                case DatabaseTypes.OleDb:
-                    return new OleDbDataAdapter(GetCommand(query) as OleDbCommand);
-                default:
-                    return new SqlDataAdapter(GetCommand(query) as SqlCommand);
-            }
-        }
+        private DbDataAdapter GetDbDataAdapter(string query) => _helper.GetDbDataAdapter(query);
 
         /// <summary>
         /// function to get data with the given query
@@ -534,7 +416,7 @@ namespace SqlUtils
         /// <returns>data reader</returns>
         public DbDataReader SelectByQuery_Reader(string query)
         {
-            return GetCommand(query).ExecuteReader();
+            return _helper.GetCommand(query).ExecuteReader();
         }
 
         /// <summary>
@@ -567,7 +449,7 @@ namespace SqlUtils
         public DbDataReader SelectWithCondition_Reader(string tableName, string condition, string projections = "*")
         {
             var query = $"select {projections} from {tableName} where {condition}";
-            return GetCommand(query).ExecuteReader();
+            return _helper.GetCommand(query).ExecuteReader();
         }
 
         /// <summary>
@@ -580,7 +462,7 @@ namespace SqlUtils
         public bool Insert(string tableName, Dictionary<string, SqlData> data)
         {
             var query = GetInsertQuery(tableName, data);
-            var result = GetCommand(query).ExecuteNonQuery() != 0;
+            var result = _helper.GetCommand(query).ExecuteNonQuery() != 0;
             Console.WriteLine($"SqlUtils: Insert -> {query}");
             return result;
         }
@@ -595,7 +477,7 @@ namespace SqlUtils
         public bool Insert<T>(string tableName, T className)
         {
             var query = GetInsertQuery(tableName, className);
-            var result = GetCommand(query).ExecuteNonQuery() != 0;
+            var result = _helper.GetCommand(query).ExecuteNonQuery() != 0;
             Console.WriteLine($"SqlUtils: Insert -> {query}");
             return result;
         }
@@ -613,21 +495,21 @@ namespace SqlUtils
         {
             var query = $"delete from {tableName} {GetEqualCondition(idColumnName, data)}";
             Console.WriteLine($"delete: {query}");
-            return GetCommand(query).ExecuteNonQuery() != 0;
+            return _helper.GetCommand(query).ExecuteNonQuery() != 0;
         }
 
         public bool Delete(string tableName, string idColumnName, object id)
         {
             var query = $"delete from {tableName} {GetEqualCondition(idColumnName, id)}";
             Console.WriteLine($"SqlUtils: Delete -> {query}");
-            return GetCommand(query).ExecuteNonQuery() != 0;
+            return _helper.GetCommand(query).ExecuteNonQuery() != 0;
         }
 
         public bool DeleteAll(string tableName)
         {
             var query = $"delete from {tableName}";
             Console.WriteLine($"SqlUtils: Delete -> {query}");
-            return GetCommand(query).ExecuteNonQuery() != 0;
+            return _helper.GetCommand(query).ExecuteNonQuery() != 0;
         }
 
 
@@ -641,7 +523,7 @@ namespace SqlUtils
         {
             var query = $"delete from {tableName} where {condition}";
             Console.WriteLine($"SqlUtils: Delete -> {query}");
-            return GetCommand(query).ExecuteNonQuery() != 0;
+            return _helper.GetCommand(query).ExecuteNonQuery() != 0;
         }
 
         /// <summary>
@@ -649,8 +531,7 @@ namespace SqlUtils
         /// </summary>
         public void Commit()
         {
-            _transaction.Commit();
-            ClearTransaction();
+            _helper.Commit();
         }
 
 
@@ -659,8 +540,7 @@ namespace SqlUtils
         /// </summary>
         public void RollBack()
         {
-            _transaction.Rollback();
-            ClearTransaction();
+            _helper.RollBack();
         }
 
 

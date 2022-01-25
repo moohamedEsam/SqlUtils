@@ -109,6 +109,11 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="DatabaseTypes.cs" />
+    <Compile Include="Helpers\BaseHelper.cs" />
+    <Compile Include="Helpers\MysqlHelper.cs" />
+    <Compile Include="Helpers\OleDBHelper.cs" />
+    <Compile Include="Helpers\OracleHelper.cs" />
+    <Compile Include="Helpers\SqlServerHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SqlData.cs" />
     <Compile Include="SqlHelper.cs" />
