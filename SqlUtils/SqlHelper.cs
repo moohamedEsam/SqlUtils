@@ -59,7 +59,10 @@ namespace SqlUtils
         {
             _helper.Disconnect();
         }
-
+        public void InitializeTransaction()
+        {
+            _helper.InitializeTransaction();
+        }
         /// <summary>
         /// legacy function
         /// </summary>
