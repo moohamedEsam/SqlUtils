@@ -59,3 +59,5 @@ C:/work/SqlUtils/SqlUtils/bin/Release/System.Runtime.CompilerServices.Unsafe.xml
 C:/work/SqlUtils/SqlUtils/obj/Release/SqlUtils.csproj.CopyComplete
 /home/mohamed/RiderProjects/SqlUtils/SqlUtils/bin/Release/System.Data.Common.dll
 /home/mohamed/RiderProjects/SqlUtils/SqlUtils/bin/Release/System.Data.SqlClient.dll
+/home/mohamed/RiderProjects/SqlUtils/SqlUtils/bin/Release/SqlUtils.dll.config
+/home/mohamed/RiderProjects/SqlUtils/SqlUtils/bin/Release/Oracle.ManagedDataAccess.dll
