@@ -7,24 +7,61 @@ namespace SqlUtils.Helpers
 {
     public class OracleHelper : BaseHelper
     {
-        public new void Connect(string serverName, string databaseName,
+        private OracleConnection _connection;
+        private OracleTransaction _transaction;
+
+        public void AssignTransactionIfExists(DbCommand command)
+        {
+            if(_transaction != null)
+                command.Transaction = _transaction;
+        }
+
+        public void ClearTransaction()
+        {
+            _transaction.Dispose();
+            _transaction = null;
+        }
+
+        public void Commit()
+        {
+            _transaction?.Commit();
+            ClearTransaction();
+        }
+
+        public  void Connect(string serverName, string databaseName,
             string username, string password)
         {
             var connectionString =
                 $"User Id={username};Password={password};Data Source={databaseName}";
-            Connection = new OracleConnection(connectionString);
-            Connection.Open();
+            _connection = new OracleConnection(connectionString);
+            _connection.Open();
             Console.WriteLine("connection open");
         }
 
-        public new DbCommand GetCommand(string query)
+        public void Disconnect()
         {
-            var command = new OracleCommand(query, Connection as OracleConnection);
-            AssignTransactionIfExists(command);
-            return command;
+            _connection?.Close();
         }
 
-        public new DbDataAdapter GetDbDataAdapter(string query) =>
-            new OracleDataAdapter(GetCommand(query) as OracleCommand);
+        public DbCommand GetCommand(string query)
+        {
+            return new OracleCommand(query, _connection);
+        }
+
+        public DbDataAdapter GetDbDataAdapter(string query)
+        {
+            return new OracleDataAdapter(query, _connection);
+        }
+
+        public void InitializeTransaction()
+        {
+            _transaction = _connection.BeginTransaction();    
+        }
+
+        public void RollBack()
+        {
+            _transaction?.Rollback();
+            ClearTransaction();
+        }
     }
 }

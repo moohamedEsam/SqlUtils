@@ -1,14 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Data.Common;
-using System.Data.OleDb;
-using System.Data.SqlClient;
-using System.Globalization;
 using System.Linq;
 using System.Reflection;
-using MySql.Data.MySqlClient;
-using Oracle.ManagedDataAccess.Client;
 using SqlUtils.Helpers;
 
 namespace SqlUtils
@@ -19,7 +13,7 @@ namespace SqlUtils
     /// </summary>
     public class SqlHelper
     {
-        private BaseHelper _helper;
+        private readonly BaseHelper _helper;
         private readonly DatabaseTypes _databaseType;
 
         /// <param name="databaseTypes">
@@ -43,6 +37,9 @@ namespace SqlUtils
                 case DatabaseTypes.Oracle:
                     _helper = new OracleHelper();
                     break;
+                default:
+                    _helper = new SqlServerHelper();
+                    break;
             }
         }
 
@@ -59,74 +56,28 @@ namespace SqlUtils
         {
             _helper.Disconnect();
         }
+
         public void InitializeTransaction()
         {
             _helper.InitializeTransaction();
         }
-        /// <summary>
-        /// legacy function
-        /// </summary>
-        [Obsolete("legacy function")]
-        private string PrepareDataForSql(SqlData data)
+
+
+        private string PrepareDataForSql(object data)
         {
-            switch (data.Type)
+            switch (data)
             {
-                case SqlTypes.StringEn:
-                    return $"'{data.Data}'";
-                case SqlTypes.StringAr:
-                    return $"N'{data.Data}'";
-                case SqlTypes.Date:
+                case string stringData:
+                    return $"N'{stringData}'";
 
-                    try
-                    {
-                        var unused = DateTime.ParseExact(data.Data, "yyyy/mm/dd", CultureInfo.InvariantCulture);
-                        return _databaseType == DatabaseTypes.Sqlserver
-                            ? $"cast({data.Data} as datetime)"
-                            : $"str_to_date('{data.Data}', '%Y/%m/%d')";
-                    }
-                    catch (Exception)
-                    {
-                        Console.WriteLine("correct format should be yyyy/mm/dd");
-                        throw;
-                    }
+                case DateTime date:
 
-                case SqlTypes.Time:
-                {
-                    try
-                    {
-                        var unused = DateTime.ParseExact(data.Data, "HH:mm", CultureInfo.InvariantCulture);
-                        return _databaseType == DatabaseTypes.Sqlserver
-                            ? $"convert(time, '{data.Data}')"
-                            : $"str_to_date('{data.Data}', '%H:%i')";
-                    }
-                    catch (Exception)
-                    {
-                        Console.WriteLine("invalid date format");
-                        Console.WriteLine("correct format should be HH:mm");
-                        throw;
-                    }
-                }
-                case SqlTypes.DateTime:
-                    try
-                    {
-                        var unused = DateTime.ParseExact(data.Data, "yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture);
-                        return _databaseType == DatabaseTypes.Sqlserver
-                            ? $"cast({data.Data} as datetime)"
-                            : $"str_to_date('{data.Data}', '%Y/%m/%d %H:%i')";
-                    }
-                    catch (Exception)
-                    {
-                        Console.WriteLine("invalid date format");
-                        Console.WriteLine("correct format should be yyyy/MM/dd HH:mm");
-                        throw;
-                    }
-
-
-                case SqlTypes.Number:
-                    return data.Data;
+                    return _databaseType == DatabaseTypes.Sqlserver
+                        ? $"cast({date} as datetime)"
+                        : $"str_to_date('{date}', '%Y/%m/%d %H:%i')";
 
                 default:
-                    return data.Data;
+                    return data.ToString();
             }
         }
 
@@ -183,21 +134,6 @@ namespace SqlUtils
             return query;
         }
 
-        /// <summary>
-        /// legacy function
-        /// </summary>
-        [Obsolete("legacy function")]
-        private string GetEqualCondition(string idColumnName, SqlData id)
-        {
-            var query = " where ";
-            if (id.Type == SqlTypes.StringEn || id.Type == SqlTypes.StringAr)
-                query += $"{idColumnName} like {PrepareDataForSql(id)}";
-
-            else
-                query += $"{idColumnName} = {PrepareDataForSql(id)}";
-            Console.WriteLine($"equal condition: {query}");
-            return query;
-        }
 
         private string GetUpdateQuery<T>(
             T className,
@@ -210,12 +146,12 @@ namespace SqlUtils
             return query;
         }
 
-        [Obsolete("legacy function")]
+
         private string GetUpdateQuery(
             string tableName,
             string idColumnName,
-            SqlData id,
-            Dictionary<string, SqlData> data)
+            object id,
+            Dictionary<string, object> data)
         {
             var query = GetUpdateQueryWithoutCondition(tableName, data);
             query += GetEqualCondition(idColumnName, id);
@@ -236,13 +172,11 @@ namespace SqlUtils
             return query;
         }
 
-        [Obsolete("legacy function")]
-        private string GetUpdateQueryWithoutCondition(string tableName, Dictionary<string, SqlData> data)
+        private string GetUpdateQueryWithoutCondition(string tableName, Dictionary<string, object> data)
         {
             var query = $"update {tableName} set ";
-            foreach (var item in data)
-                query += $"{item.Key} = {PrepareDataForSql(item.Value)}, ";
-
+            query = data.Aggregate(query,
+                (current, item) => current + $"{item.Key} = {PrepareDataForSql(item.Value)}, ");
 
             query = query.Substring(0, query.Length - 2);
             return query;
@@ -266,8 +200,8 @@ namespace SqlUtils
             return query;
         }
 
-        [Obsolete("legacy function")]
-        private string GetInsertQuery(string tableName, Dictionary<string, SqlData> data)
+
+        private string GetInsertQuery(string tableName, Dictionary<string, object> data)
         {
             var query = $"insert into {tableName} ";
             var columns = "";
@@ -293,12 +227,11 @@ namespace SqlUtils
         /// <param name="id">value of the id and its type in a class</param>
         /// <param name="data">the columns and their corresponding values</param>
         /// <returns>true if the update affected at least one row otherwise false</returns>
-        [Obsolete("legacy function")]
         public bool Update(
             string tableName,
             string idColumnName,
-            SqlData id,
-            Dictionary<string, SqlData> data)
+            object id,
+            Dictionary<string, object> data)
         {
             var updateQuery = GetUpdateQuery(tableName, idColumnName, id, data);
             return _helper.GetCommand(updateQuery).ExecuteNonQuery() != 0;
@@ -325,8 +258,8 @@ namespace SqlUtils
             return _helper.GetCommand(updateQuery).ExecuteNonQuery() != 0;
         }
 
-        [Obsolete("legacy function")]
-        public bool UpdateWithCondition(string tableName, Dictionary<string, SqlData> data, string condition)
+
+        public bool UpdateWithCondition(string tableName, Dictionary<string, object> data, string condition)
         {
             var query = GetUpdateQueryWithoutCondition(tableName, data) + "where " + condition;
             return _helper.GetCommand(query).ExecuteNonQuery() != 0;
@@ -461,8 +394,7 @@ namespace SqlUtils
         /// <param name="tableName"></param>
         /// <param name="data">columns and their values</param>
         /// <returns>true if the update affected at least one row otherwise false</returns>
-        [Obsolete("legacy function")]
-        public bool Insert(string tableName, Dictionary<string, SqlData> data)
+        public bool Insert(string tableName, Dictionary<string, object> data)
         {
             var query = GetInsertQuery(tableName, data);
             var result = _helper.GetCommand(query).ExecuteNonQuery() != 0;
@@ -483,22 +415,6 @@ namespace SqlUtils
             var result = _helper.GetCommand(query).ExecuteNonQuery() != 0;
             Console.WriteLine($"SqlUtils: Insert -> {query}");
             return result;
-        }
-
-
-        /// <summary>
-        /// delete a row using its id
-        /// </summary>
-        /// <param name="tableName"></param>
-        /// <param name="idColumnName">the column name of the primary key</param>
-        /// <param name="data"></param>
-        /// <returns>true if the update affected at least one row otherwise false</returns>
-        [Obsolete("legacy function")]
-        public bool Delete(string tableName, string idColumnName, SqlData data)
-        {
-            var query = $"delete from {tableName} {GetEqualCondition(idColumnName, data)}";
-            Console.WriteLine($"delete: {query}");
-            return _helper.GetCommand(query).ExecuteNonQuery() != 0;
         }
 
         public bool Delete(string tableName, string idColumnName, object id)
